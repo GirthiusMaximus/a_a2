@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ..facepunch import MIN_DISTANCE_SAME_TYPE, WorldConfig, tier_index
 from ..layers import SEA_LEVEL, TERRAIN_HEIGHT, Biome, Splat, Topology
 from ..monuments import MONUMENTS, MonumentSpec
 
@@ -134,7 +135,23 @@ def _slope_deg_coarse(h: np.ndarray, size: int) -> np.ndarray:
 # placement
 # ---------------------------------------------------------------------------
 
-def _resolve_counts(spec: MonumentSpec, land_km2: float, density: float) -> int:
+def _resolve_counts(
+    spec: MonumentSpec, land_km2: float, density: float, vanilla: bool = False
+) -> int:
+    """How many of this monument to place.
+
+    In vanilla mode the count comes from the real composition of a procedural
+    map rather than an area formula.  Facepunch's ``PlaceMonuments`` iterates
+    over *prefabs* and gives each one at most one position per pass, so a map
+    gets exactly one Launch Site and gets its three Fishing Villages from the
+    three distinct ``fishing_village_a/b/c`` prefabs -- not from one prefab
+    stamped three times.
+    """
+    if vanilla:
+        n = spec.vanilla_count
+        if density != 1.0 and n > 1:
+            n = int(round(n * density))
+        return max(int(n), 1 if spec.vanilla_count > 0 else 0)
     if spec.per_km2 <= 0:
         return 1
     n = int(round(spec.per_km2 * land_km2 * density))
@@ -152,6 +169,7 @@ def place_monuments(
     enabled: list[str] | None = None,
     density: float = 1.0,
     work_res: int = 256,
+    vanilla: bool = False,
 ) -> list[Placement]:
     """Pick monument positions.  Returns placements in placement order."""
     rng = np.random.default_rng((seed * 2654435761 + 17) & 0xFFFFFFFF)
@@ -180,8 +198,13 @@ def place_monuments(
         biome_coarse = np.stack([_block_reduce(b, wres) for b in biome_coarse])
     biome_id = np.argmax(biome_coarse, axis=0)
 
+    # Facepunch gates monuments by loot tier (MonumentInfo.Tier); the tiers
+    # are bands across the seed-derived loot axis.
+    tiers = tier_index(wres, seed, WorldConfig().normalise().tier_percentages)
+
     _window_cache: dict[int, tuple] = {}
     occupied = np.zeros((wres, wres), dtype=np.float32)   # radius in metres claimed
+    same_type: dict[str, np.ndarray] = {}                 # key -> blocked mask
     land_km2 = float(land.mean()) * (size / 1000.0) ** 2
 
     # candidate coordinate grids
@@ -199,7 +222,7 @@ def place_monuments(
     for spec in specs:
         if size < spec.min_map_size:
             continue
-        want = _resolve_counts(spec, land_km2, density)
+        want = _resolve_counts(spec, land_km2, density, vanilla)
         if want <= 0:
             continue
 
@@ -232,6 +255,14 @@ def place_monuments(
             ok &= land_frac > 0.985
             ok &= dist_to_water * m_per_cell > spec.radius * 1.05
 
+        if vanilla and len(spec.tiers) < 3:
+            tier_ok = np.zeros_like(ok)
+            for t in spec.tiers:
+                tier_ok |= tiers == t
+            # don't strand a monument that has nowhere legal to go
+            if (ok & tier_ok).any():
+                ok &= tier_ok
+
         if spec.biomes:
             want_ids = [_BIOME_INDEX[b] for b in spec.biomes if b in _BIOME_INDEX]
             if want_ids:
@@ -255,8 +286,9 @@ def place_monuments(
             score -= np.clip((elev_m - 110.0) / 90.0, 0.0, 1.0) * 0.70
         score += rng.random((wres, wres)).astype(np.float32) * 0.55   # seeded variety
 
+        blocked = same_type.setdefault(spec.key, np.zeros((wres, wres), dtype=bool))
         for _ in range(want):
-            free = ok & (occupied <= 0.0)
+            free = ok & (occupied <= 0.0) & ~blocked
             if not free.any():
                 break
             masked = np.where(free, score, -np.inf)
@@ -282,6 +314,8 @@ def place_monuments(
             keep = spec.radius * 1.5 + 45.0
             rr = np.hypot((cx - xi) * m_per_cell, (cz - zi) * m_per_cell)
             occupied = np.maximum(occupied, (rr < keep).astype(np.float32))
+            # PlaceMonuments.MinDistanceSameType, serialized default 500 m
+            blocked |= rr < max(MIN_DISTANCE_SAME_TYPE, keep)
 
     return placements
 

@@ -21,6 +21,7 @@ from ..layers import (
     heightmap_resolution,
     splatmap_resolution,
 )
+from ..facepunch import WorldConfig, loot_axis_angle, tier_index
 from ..monuments import MONUMENTS
 from ..prefabs import MONUMENT_CATEGORY
 from ..worldfile import PrefabData, VectorData
@@ -37,7 +38,7 @@ class Recipe:
     size: int = 3000
     seed: int = 0
     theme: str = "classic"
-    land_ratio: float = 0.45          # target fraction of map above sea level
+    land_ratio: float | None = None   # absolute land fraction; None = theme default
     mountain_scale: float = 1.0       # vertical exaggeration of highlands
     beach_width: float = 1.0          # multiplier on beach band width
     river_density: float = 1.0        # 0 disables rivers
@@ -52,6 +53,10 @@ class Recipe:
     monument_blacklist: list[str] = field(default_factory=list)
     roads: bool = True                # build the road network
     ring_road: bool = True            # include the vanilla-style ring road
+
+    def effective_land_ratio(self, theme) -> float:
+        """Absolute target land fraction: the request if given, else the theme's."""
+        return theme.land_ratio_default if self.land_ratio is None else float(self.land_ratio)
 
     def rng(self, salt: int = 0) -> np.random.Generator:
         return np.random.default_rng((self.seed + salt * 7919) & 0xFFFFFFFF)
@@ -116,16 +121,37 @@ def slope_deg(height01: np.ndarray, size: int) -> np.ndarray:
 def _fit_land_ratio(height01: np.ndarray, target: float) -> np.ndarray:
     """Shift heights so `target` fraction of the map sits above sea level.
 
-    `target` arrives pre-multiplied by the theme's ``land_ratio_scale``, so a
-    high slider value on a land-heavy theme (0.9 x 1.45) can overshoot 1.0.
-    Clamp instead of letting np.quantile raise.
+    ``target`` is an *absolute* land fraction and is honoured as given: asking
+    for 0.75 yields ~75% land, not 75% scaled by some hidden per-theme factor.
+    Themes express their own character through ``land_ratio_default`` instead.
+
+    A plain quantile shift can still miss when the height histogram has a flat
+    plateau exactly at the cut (a dead-level seabed, for example), so the result
+    is refined by bisection on the actual achieved ratio.
     """
     target = float(np.clip(target, 0.0, 0.99))
     if target <= 0.01:
         return height01
-    q = np.quantile(height01, 1.0 - target)
-    shifted = height01 + (SEA_LEVEL - q)
-    return np.clip(shifted, 0.0, 1.0)
+    if target >= 0.99:
+        return np.clip(height01 + (SEA_LEVEL - height01.min() + 1e-4), 0.0, 1.0)
+
+    q = float(np.quantile(height01, 1.0 - target))
+    offset = SEA_LEVEL - q
+
+    achieved = float((height01 + offset > SEA_LEVEL).mean())
+    if abs(achieved - target) > 0.005:
+        # bisect the offset until the realised ratio matches the request
+        lo = SEA_LEVEL - float(height01.max())
+        hi = SEA_LEVEL - float(height01.min())
+        for _ in range(40):
+            mid = 0.5 * (lo + hi)
+            if float((height01 + mid > SEA_LEVEL).mean()) < target:
+                lo = mid
+            else:
+                hi = mid
+        offset = 0.5 * (lo + hi)
+
+    return np.clip(height01 + offset, 0.0, 1.0)
 
 
 def _thermal_erosion(height01: np.ndarray, iterations: int = 12, talus: float = 0.0012) -> np.ndarray:
@@ -400,25 +426,46 @@ def _topology(
         riverside = ring(river_mask, max(1, int(12 * px_per_m))) & land
         topo[riverside] |= Topology.RIVERSIDE
 
-    # tier zones: south -> Tier0, middle -> Tier1, north -> Tier2 (vanilla-like)
-    lat = np.linspace(0.0, 1.0, res, dtype=np.float32)[:, None] * np.ones((1, res), np.float32)
-    lat = lat + 0.1 * noise.fbm(res, recipe.seed + 42, octaves=3, scale=2.0)
-    topo[lat < 0.40] |= Topology.TIER0
-    topo[(lat >= 0.40) & (lat < 0.72)] |= Topology.TIER1
-    topo[lat >= 0.72] |= Topology.TIER2
-
-    # guarantee valid player spawns: every beach gets Tier0 (spawn needs
-    # TIER0 | BEACH | OCEANSIDE | MAINLAND overlap)
-    topo[beach] |= Topology.TIER0
-
-    # fallback: if the combined spawn mask is too small (tiny-island themes),
-    # force-paint the full spawn flag set on flat land near the coast
+    # ---- loot tiers -------------------------------------------------------
     spawn_flags = int(Topology.TIER0 | Topology.BEACH | Topology.OCEANSIDE | Topology.MAINLAND)
     m2_per_px = (recipe.size / res) ** 2
-    spawn_area = ((topo & spawn_flags) == spawn_flags).sum() * m2_per_px
-    if spawn_area < 20000:
-        coastal_flat = dilate(ocean, max(1, int(30 * px_per_m))) & land & (slope < 40)
-        topo[coastal_flat] |= spawn_flags
+
+    if theme.facepunch_tiers:
+        # Facepunch's real system: bands perpendicular to the seed-derived loot
+        # axis, split 30 / 30 / 40 (WorldConfig defaults).  Tier0 is the starter
+        # end of the map, Tier2 the high-loot end -- this is what gates where
+        # Launch Site may land and where players are allowed to spawn.
+        tiers = tier_index(res, recipe.seed, WorldConfig().normalise().tier_percentages)
+        topo[tiers == 0] |= Topology.TIER0
+        topo[tiers == 1] |= Topology.TIER1
+        topo[tiers == 2] |= Topology.TIER2
+
+        # Players spawn on Tier0 beaches only.  If that intersection is too
+        # small to be playable, widen *within the Tier0 band* before resorting
+        # to anything that would blur the tier layout.
+        spawn_area = ((topo & spawn_flags) == spawn_flags).sum() * m2_per_px
+        if spawn_area < 20000:
+            t0 = tiers == 0
+            coastal = dilate(ocean, max(1, int(30 * px_per_m))) & land & (slope < 40)
+            topo[coastal & t0] |= spawn_flags
+            spawn_area = ((topo & spawn_flags) == spawn_flags).sum() * m2_per_px
+        if spawn_area < 5000:  # last-ditch safety: an unspawnable map is useless
+            topo[beach] |= Topology.TIER0
+    else:
+        # simpler latitude banding for the stylised themes
+        lat = np.linspace(0.0, 1.0, res, dtype=np.float32)[:, None] * np.ones((1, res), np.float32)
+        lat = lat + 0.1 * noise.fbm(res, recipe.seed + 42, octaves=3, scale=2.0)
+        topo[lat < 0.40] |= Topology.TIER0
+        topo[(lat >= 0.40) & (lat < 0.72)] |= Topology.TIER1
+        topo[lat >= 0.72] |= Topology.TIER2
+
+        # guarantee valid player spawns: every beach gets Tier0
+        topo[beach] |= Topology.TIER0
+
+        spawn_area = ((topo & spawn_flags) == spawn_flags).sum() * m2_per_px
+        if spawn_area < 20000:
+            coastal_flat = dilate(ocean, max(1, int(30 * px_per_m))) & land & (slope < 40)
+            topo[coastal_flat] |= spawn_flags
 
     name_to_flag = {t.name.lower(): int(t) for t in Topology}
     for name in recipe.topology_blacklist:
@@ -448,7 +495,7 @@ def generate(recipe: Recipe, progress: ProgressFn = _noop_progress) -> Generatio
     else:
         height01 = theme.build_height(h_res, recipe)
         if not theme.dry:  # dry themes control their own floor (no crater lakes)
-            height01 = _fit_land_ratio(height01, recipe.land_ratio * theme.land_ratio_scale)
+            height01 = _fit_land_ratio(height01, recipe.effective_land_ratio(theme))
 
     if recipe.erosion and theme.erosion:
         progress(0.25, "Eroding terrain")
@@ -489,7 +536,8 @@ def generate(recipe: Recipe, progress: ProgressFn = _noop_progress) -> Generatio
         allowed = [k for k in allowed if k not in set(recipe.monument_blacklist)]
         placements = place_monuments(
             height01, water01, size, recipe.seed, sea, biome_coarse,
-            enabled=allowed, density=recipe.monument_density, work_res=work,
+            enabled=allowed, density=recipe.monument_density,
+            vanilla=theme.vanilla_monuments, work_res=work,
         )
         height01 = stamp_monuments(height01, placements, size, sea)
 

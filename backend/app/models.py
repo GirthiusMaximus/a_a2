@@ -12,7 +12,9 @@ class RecipeModel(BaseModel):
     size: int = Field(3000, ge=1000, le=6000)
     seed: Optional[int] = Field(None, ge=0, le=2147483647)
     theme: str = "classic"
-    land_ratio: float = Field(0.45, ge=0.1, le=0.9)
+    # None = use the theme's own default land fraction.  When set it is an
+    # absolute target and is honoured as given.
+    land_ratio: float | None = Field(None, ge=0.05, le=0.95)
     mountain_scale: float = Field(1.0, ge=0.2, le=3.0)
     beach_width: float = Field(1.0, ge=0.25, le=3.0)
     river_density: float = Field(1.0, ge=0.0, le=3.0)

@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .. import facepunch as fp
 from ..layers import SEA_LEVEL, TERRAIN_HEIGHT, Splat, Topology
 from ..worldfile import PathData, VectorData
 from .placement import Placement, _block_reduce, _slope_deg_coarse
@@ -509,26 +510,28 @@ def paint_roads(splat: np.ndarray, topology: np.ndarray, network: RoadNetwork,
 def to_path_data(network: RoadNetwork, profiles: list[list[float]]) -> list[PathData]:
     """Convert the network into ``.map`` PathData records."""
     out: list[PathData] = []
-    for road, ys in zip(network.roads, profiles):
+    for i, (road, ys) in enumerate(zip(network.roads, profiles)):
         nodes = [
-            VectorData(x, (y - SEA_LEVEL) * TERRAIN_HEIGHT, z)
+            # GenerateRoadLayout clamps road nodes to `Mathf.Max(height, 1f)`
+            VectorData(x, max((y - SEA_LEVEL) * TERRAIN_HEIGHT, 1.0), z)
             for (x, z), y in zip(road.points, ys)
         ]
         if len(nodes) < 2:
             continue
         out.append(PathData(
-            name="Road",
+            # every constant below is lifted verbatim from GenerateRoadLayout
+            name=f"Road {i}",
             spline=True,
             start=not road.loop,
             end=not road.loop,
-            width=road.width,
-            inner_padding=1.0,
-            outer_padding=1.0,
-            inner_fade=8.0,
-            outer_fade=8.0,
-            random_scale=1.0,
+            width=fp.ROAD_WIDTH,
+            inner_padding=fp.ROAD_INNER_PADDING,
+            outer_padding=fp.ROAD_OUTER_PADDING,
+            inner_fade=fp.ROAD_INNER_FADE,
+            outer_fade=fp.ROAD_OUTER_FADE,
+            random_scale=fp.ROAD_RANDOM_SCALE,
             mesh_offset=0.0,
-            terrain_offset=0.0,
+            terrain_offset=fp.ROAD_TERRAIN_OFFSET,
             splat=1 << int(Splat.GRAVEL),
             topology=int(Topology.ROAD),
             nodes=nodes,

@@ -80,7 +80,8 @@ def test_roads_exist_and_are_marked(world) -> None:
 def test_road_nodes_are_sane(world) -> None:
     half = world.size / 2.0
     for path in world.paths:
-        assert path.name == "Road"
+        # GenerateRoadLayout names paths `"Road " + number`
+        assert path.name.startswith("Road")
         assert len(path.nodes) >= 2
         assert path.width > 0
         for n in path.nodes:

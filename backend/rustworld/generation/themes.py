@@ -11,6 +11,7 @@ from typing import Callable, Optional, TYPE_CHECKING
 
 import numpy as np
 
+from ..facepunch import axis_projection, biome_axis_angle
 from ..layers import SEA_LEVEL, TERRAIN_HEIGHT, Biome
 from . import noise
 
@@ -42,10 +43,17 @@ class ThemeSpec:
     forest_threshold: float = 0.22
     beach_scale: float = 1.0
     shelf: float = 0.85           # strength of shoreline flattening
-    land_ratio_scale: float = 1.0
+    land_ratio_default: float = 0.45   # absolute target land fraction for this theme
     biome_rotation: float = 0.0   # max radians of seed-random biome-axis tilt
     monuments: bool = True        # theme supports monument placement
     roads: bool = True            # theme supports a road network
+    facepunch_tiers: bool = False  # use the real seed-derived loot-axis tier bands
+    vanilla_monuments: bool = False  # use the vanilla monument composition table
+
+
+def _land_ratio(recipe: "Recipe", default: float) -> float:
+    """Resolve the land-fraction request; ``None`` means 'use the theme default'."""
+    return default if recipe.land_ratio is None else float(recipe.land_ratio)
 
 
 def _amp(recipe: "Recipe") -> float:
@@ -60,23 +68,115 @@ def _centered(res: int) -> tuple[np.ndarray, np.ndarray]:
 # --- height builders -------------------------------------------------------
 
 def classic(res: int, recipe: "Recipe") -> np.ndarray:
-    """Vanilla-style: landmass fills the square, heavily lobed coast,
-    lowland interior with scattered hill clusters (see docs/THEMES.md)."""
+    """Vanilla-style landmass, calibrated to real Rust relief.
+
+    Facepunch's own ``GenerateHeight`` is native code, so this is not a port --
+    it is a structural reconstruction tuned to match the statistics of real
+    procedural maps (see docs/PROCGEN_RESEARCH.md).  Three things matter and
+    the previous version got all three wrong:
+
+    * **A rolling continental base.**  Real Rust land is not a plain with a few
+      bumps; it undulates everywhere.  Without this the median land elevation
+      collapses to a couple of metres and rivers have nowhere to start
+      (``GenerateRiverLayout`` needs sources above 15 m).
+    * **Ridged mountain ranges, thresholded.**  ``noise.ridged`` has a mean of
+      0.665, so using it raw just lifts everything uniformly.  Re-mapping the
+      top of its range turns it into actual ranges with steep flanks.
+    * **Relief that varies across the map.**  The native generator is handed
+      ``biomeAngle``; terrain character genuinely changes from the arid end to
+      the arctic end, so amplitude is modulated along the real biome axis.
+    """
     s = recipe.seed
-    border = noise.square_falloff(res, margin=0.13)
-    lobes = noise.fbm(res, s + 2, octaves=5, scale=4.4)
-    inland = noise.smoothstep(0.26, 0.54, border + lobes * 0.30)
+    ms = recipe.mountain_scale
 
-    base = noise.warped_fbm(res, s, octaves=6, scale=3.8, warp=0.45)
-    hills = noise.ridged(res, s + 1, octaves=5, scale=3.1)
-    hillmask = noise.smoothstep(0.05, 0.62, noise.fbm(res, s + 3, octaves=3, scale=2.2))
+    # Noise scales are cycles-per-map, so without this a 1500 m map gets the
+    # same number of mountains as a 4500 m one squeezed into a third of the
+    # ground -- measured cliff share jumped from 17% at size 3000 to 36% at
+    # size 1500.  Scaling by size keeps feature wavelengths fixed in metres,
+    # so a small map is a smaller island of the same kind of terrain.
+    # Square root rather than linear: fully linear scaling fits barely one
+    # ridge across a 1500 m map and flattens it to a 67 m peak.
+    k = float(np.sqrt(recipe.size / 3000.0))
 
-    h = (
-        SEA_LEVEL - 0.036
-        + inland * (0.048 + base * 0.006)
-        + hills * hillmask * inland * 0.105 * recipe.mountain_scale
+    # Coastline.  Reference renders of real procedural maps show a rounded
+    # island sitting inside a clear ocean margin, cut by deep fjords and
+    # shedding detached islets -- not a square landmass running to the map
+    # edge.  A radial falloff supplies the blob, two noise scales supply the
+    # peninsulas and the fjords.
+    radial = noise.radial_falloff(res, power=2.0, radius=1.12)
+    lobes = noise.fbm(res, s + 2, octaves=4, scale=2.3 * k)
+    fjords = noise.fbm(res, s + 8, octaves=5, scale=6.5 * k)
+    shape = radial + lobes * 0.44 + fjords * 0.17
+
+    # Size the island to the requested land fraction directly, by picking the
+    # iso-level of the shape field that encloses it.  Leaving this to the
+    # downstream height shift instead makes the shift seed-dependent, which
+    # drags the whole vertical profile around: measured p50 land elevation
+    # swung from 77 m to 126 m and seabed depth from -86 m to -34 m between
+    # two seeds.  Fixing the coastline here keeps relief stable across seeds.
+    target = _land_ratio(recipe, 0.60)
+    target = float(np.clip(target, 0.05, 0.95))
+
+    # regional relief gradient along the seed-derived biome axis
+    baxis = axis_projection(res, biome_axis_angle(s))
+    region = 0.62 + 0.76 * baxis
+
+    # rolling continental base - broad, always present
+    base = noise.warped_fbm(res, s, octaves=6, scale=3.2 * k, warp=0.22)
+    rolling = noise.smoothstep(-0.50, 0.50, base)
+
+    # Mountain ranges.  A hard threshold on the ridge field compresses the
+    # whole 200 m rise into a few cells and turns every range into a wall
+    # (measured: 68-81% of land above 80 m came out steeper than Facepunch's
+    # 30 degree cliff cutoff).  A broad smoothstep whose upper edge sits past
+    # the top of the ridge range spreads the climb out into real flanks.
+    ridge = noise.ridged(res, s + 1, octaves=4, scale=1.7 * k)
+    rangemask = noise.smoothstep(0.15, 0.80, noise.fbm(res, s + 3, octaves=3, scale=1.6 * k) + 0.5)
+    mountains = noise.smoothstep(0.30, 1.25, ridge) * rangemask
+
+    # foothills tie the ranges into the rolling base
+    foothills = noise.smoothstep(0.10, 0.90, ridge) * rangemask
+
+    # high-frequency roughness so slopes are not glassy
+    detail = noise.fbm(res, s + 5, octaves=4, scale=10.0 * k)
+
+    # Ocean floor.  This has to be genuinely deep and genuinely varied: a flat
+    # seabed held at one value is a plateau in the height histogram, the
+    # land-ratio fit then parks sea level exactly on it, and the whole ocean
+    # renders as beach sand instead of water.
+    seabed = noise.fbm(res, s + 9, octaves=4, scale=3.0 * k)
+    floor = -0.082 + seabed * 0.020
+
+    relief = (
+        0.012
+        + rolling * 0.042 * region
+        + foothills * 0.030 * region
+        + mountains * 0.215 * ms * region
+        + detail * 0.004
     )
-    return np.clip(h, 0.0, 1.0)
+
+    # Coast crossing and elevation magnitude are kept separate.  Blending the
+    # seabed straight into full relief makes land leap from deep water to high
+    # ground across a couple of cells, which left 97% of the land above 15 m
+    # and nowhere to put a beach.  Here `t` only decides land vs sea (crossing
+    # at exactly 0.5) while the ramps decide how fast ground rises or falls,
+    # so the shoreline gets a broad low-lying apron.
+    depth = -floor
+
+    def _blend(level: float) -> np.ndarray:
+        t = noise.smoothstep(level - 0.38, level + 0.38, shape)
+        land_t = np.clip((t - 0.5) * 2.0, 0.0, 1.0)
+        sea_t = np.clip((0.5 - t) * 2.0, 0.0, 1.0)
+        return SEA_LEVEL + land_t**1.7 * relief - sea_t**1.2 * depth
+
+    lo, hi = float(shape.min()) - 0.5, float(shape.max()) + 0.5
+    for _ in range(26):
+        mid = 0.5 * (lo + hi)
+        if float((_blend(mid) > SEA_LEVEL).mean()) > target:
+            lo = mid  # too much land -> raise the level
+        else:
+            hi = mid
+    return np.clip(_blend(0.5 * (lo + hi)), 0.0, 1.0)
 
 
 def circular_isle(res: int, recipe: "Recipe") -> np.ndarray:
@@ -295,7 +395,7 @@ def naval(res: int, recipe: "Recipe") -> np.ndarray:
     s = recipe.seed
     f1, _f2, cv, _cv2 = noise.worley(res, s + 7, cells=6, jitter=0.95)
     f1 = f1 + 0.12 * noise.fbm(res, s + 8, octaves=4, scale=6.0)
-    size_boost = 0.55 + recipe.land_ratio          # land slider scales islets
+    size_boost = 0.55 + _land_ratio(recipe, 0.45)  # land slider scales islets
     radius = (0.14 + cv * 0.22) * size_boost
     islet = noise.smoothstep(1.0, 0.30, np.clip(f1 / radius, 0.0, 2.0))
     detail = noise.fbm(res, s, octaves=4, scale=7.0) * 0.006
@@ -348,13 +448,14 @@ THEMES: dict[str, ThemeSpec] = {
         ThemeSpec(
             key="classic", label="Classic Procedural",
             description="Vanilla-style landmass filling the map: lobed coastlines, lowlands with hill clusters, diagonal latitude biomes, rivers and forests.",
-            build_height=classic, land_ratio_scale=1.45, beach_scale=0.75,
-            biome_rotation=0.9,
+            build_height=classic, land_ratio_default=0.60, beach_scale=0.75,
+            biome_rotation=0.9, facepunch_tiers=True, vanilla_monuments=True,
+            rock_slope=30.0,
         ),
         ThemeSpec(
             key="circular_isle", label="Circular Isle",
             description="An atoll: round island with a highland core, ringed by a bright shallow reef shelf dotted with sandbars.",
-            build_height=circular_isle, forest_scale=3.4, land_ratio_scale=0.68,
+            build_height=circular_isle, forest_scale=3.4, land_ratio_default=0.306,
             beach_scale=1.2, biome_rotation=0.6,
         ),
         ThemeSpec(
@@ -367,7 +468,7 @@ THEMES: dict[str, ThemeSpec] = {
         ThemeSpec(
             key="archipelago", label="Archipelago",
             description="Chains of elongated islands aligned like drowned ridgelines, split by narrow straits — boat-heavy gameplay.",
-            build_height=archipelago, rivers=False, land_ratio_scale=0.8,
+            build_height=archipelago, rivers=False, land_ratio_default=0.36,
             beach_scale=0.9, biome_rotation=0.9,
         ),
         ThemeSpec(
@@ -381,7 +482,7 @@ THEMES: dict[str, ThemeSpec] = {
             description="A high desert plateau incised by branching gorges with terraced vertical walls.",
             build_height=canyonlands, biome_edges=(0.72, 0.9, 0.97),
             rock_slope=30.0, forest_threshold=0.3, erosion=False,
-            land_ratio_scale=1.35, biome_rotation=0.5,
+            land_ratio_default=0.608, biome_rotation=0.5,
         ),
         ThemeSpec(
             key="moon", label="Moon",
@@ -389,7 +490,7 @@ THEMES: dict[str, ThemeSpec] = {
             build_height=moon, fixed_biome=int(Biome.TUNDRA), jungle=False, swamps=False,
             rivers=False, barren=True, dry=True, palette="grey", erosion=False,
             monuments=False, roads=False,
-            beach_scale=0.3, shelf=0.0, land_ratio_scale=1.4,
+            beach_scale=0.3, shelf=0.0, land_ratio_default=0.63,
         ),
         ThemeSpec(
             key="mars", label="Mars",
@@ -397,7 +498,7 @@ THEMES: dict[str, ThemeSpec] = {
             build_height=mars, fixed_biome=int(Biome.ARID), jungle=False, swamps=False,
             rivers=False, barren=True, dry=True, palette="red", erosion=True,
             monuments=False, roads=False,
-            beach_scale=0.3, shelf=0.0, land_ratio_scale=1.35,
+            beach_scale=0.3, shelf=0.0, land_ratio_default=0.608,
         ),
         ThemeSpec(
             key="flatlands", label="Flatlands",

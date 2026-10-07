@@ -54,7 +54,7 @@ def run_generation(job_id: str) -> None:
             size=recipe_dict["size"],
             seed=recipe_dict["seed"],
             theme=recipe_dict.get("theme", "classic"),
-            land_ratio=recipe_dict.get("land_ratio", 0.45),
+            land_ratio=recipe_dict.get("land_ratio"),
             mountain_scale=recipe_dict.get("mountain_scale", 1.0),
             beach_width=recipe_dict.get("beach_width", 1.0),
             river_density=recipe_dict.get("river_density", 1.0),

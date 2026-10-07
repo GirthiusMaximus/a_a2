@@ -42,7 +42,9 @@ def themes() -> list[dict]:
     return [
         {"key": t.key, "label": t.label, "description": t.description,
          "supports_rivers": t.rivers, "barren": t.barren,
-         "supports_monuments": t.monuments, "supports_roads": t.roads}
+         "supports_monuments": t.monuments, "supports_roads": t.roads,
+         "default_land_ratio": t.land_ratio_default,
+         "facepunch_tiers": t.facepunch_tiers}
         for t in THEMES.values()
     ]
 

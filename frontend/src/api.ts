@@ -3,7 +3,7 @@ export interface Recipe {
   size: number;
   seed: number | null;
   theme: string;
-  land_ratio: number;
+  land_ratio: number | null;   // null = use the theme's default
   mountain_scale: number;
   beach_width: number;
   river_density: number;
@@ -28,6 +28,8 @@ export interface Theme {
   barren: boolean;
   supports_monuments: boolean;
   supports_roads: boolean;
+  default_land_ratio: number;
+  facepunch_tiers: boolean;
 }
 
 export interface Monument {
@@ -83,7 +85,7 @@ export const defaultRecipe = (): Recipe => ({
   size: 3000,
   seed: null,
   theme: "classic",
-  land_ratio: 0.45,
+  land_ratio: null,
   mountain_scale: 1.0,
   beach_width: 1.0,
   river_density: 1.0,

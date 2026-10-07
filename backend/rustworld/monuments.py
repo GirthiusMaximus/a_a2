@@ -33,11 +33,28 @@ class MonumentSpec:
     biomes: tuple[str, ...] = ()        # allowed biomes ( empty = any )
     min_map_size: int = 1000   # skip on maps smaller than this
     max_count: int = 1         # hard cap per map
+    vanilla_count: int = 1     # instances on a real procedural map (vanilla mode)
     per_km2: float = 0.0       # extra instances per km^2 of land (0 = unique)
     road_hub: bool = True      # roads route to this monument
     priority: int = 0          # higher = placed first (defaults to radius)
     default_on: bool = True    # part of the default monument set
     tags: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def tiers(self) -> tuple[int, ...]:
+        """Loot tiers this monument may spawn in.
+
+        Facepunch gates every monument with ``MonumentInfo.Tier`` (a
+        Tier0/Tier1/Tier2 flag set); that is what keeps Launch Site out of
+        the starter end of the map.  Derived here from the catalogue tags.
+        """
+        if "tier2" in self.tags:
+            return (2,)
+        if "tier1" in self.tags:
+            return (1, 2)
+        if "safezone" in self.tags:
+            return (0, 1)
+        return (0, 1, 2)
 
     @property
     def id(self) -> int:
@@ -100,11 +117,11 @@ _CATALOGUE: list[MonumentSpec] = [
 
     # ---- roadside ---------------------------------------------------------
     _M("gas_station", "assets/bundled/prefabs/autospawn/monument/roadside/gas_station_1.prefab",
-       "Oxum's Gas Station", "small", 32.0, max_slope=10.0, max_count=4, per_km2=0.30),
+       "Oxum's Gas Station", "small", 32.0, max_slope=10.0, max_count=4, per_km2=0.30, vanilla_count=3),
     _M("supermarket", "assets/bundled/prefabs/autospawn/monument/roadside/supermarket_1.prefab",
-       "Abandoned Supermarket", "small", 30.0, max_slope=10.0, max_count=4, per_km2=0.30),
+       "Abandoned Supermarket", "small", 30.0, max_slope=10.0, max_count=4, per_km2=0.30, vanilla_count=3),
     _M("warehouse", "assets/bundled/prefabs/autospawn/monument/roadside/warehouse.prefab",
-       "Mining Outpost", "small", 30.0, max_slope=10.0, max_count=4, per_km2=0.30),
+       "Mining Outpost", "small", 30.0, max_slope=10.0, max_count=4, per_km2=0.30, vanilla_count=3),
 
     # ---- tiny -------------------------------------------------------------
     _M("water_well_a", "assets/bundled/prefabs/autospawn/monument/tiny/water_well_a.prefab",
@@ -138,7 +155,7 @@ _CATALOGUE: list[MonumentSpec] = [
        max_count=2, per_km2=0.10, road_hub=False, tags=("safezone",)),
     _M("lighthouse", "assets/bundled/prefabs/autospawn/monument/lighthouse/lighthouse.prefab",
        "Lighthouse", "small", 25.0, placement="coast", max_slope=12.0,
-       max_count=3, per_km2=0.20, road_hub=False),
+       max_count=3, per_km2=0.20, road_hub=False, vanilla_count=2),
 
     # ---- offshore ---------------------------------------------------------
     _M("oilrig_small", "assets/bundled/prefabs/autospawn/monument/offshore/oilrig_1.prefab",

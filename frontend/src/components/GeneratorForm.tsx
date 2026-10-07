@@ -22,6 +22,8 @@ export default function GeneratorForm({ themes, biomes, monuments, recipe, onCha
     list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
 
   const theme = themes.find((t) => t.key === recipe.theme);
+  // land_ratio is an absolute target; null means 'whatever this theme wants'
+  const effectiveLandRatio = recipe.land_ratio ?? theme?.default_land_ratio ?? 0.45;
 
   const handleUpload = async (file: File) => {
     setUploadInfo("Uploading…");
@@ -80,8 +82,14 @@ export default function GeneratorForm({ themes, biomes, monuments, recipe, onCha
       </div>
 
       <label className="field">
-        <div className="lab"><b>Land coverage</b><span>{Math.round(recipe.land_ratio * 100)}%</span></div>
-        <input type="range" min={0.15} max={0.75} step={0.05} value={recipe.land_ratio}
+        <div className="lab">
+          <b>Land coverage</b>
+          <span>
+            {Math.round(effectiveLandRatio * 100)}%
+            {recipe.land_ratio === null ? " (theme default)" : ""}
+          </span>
+        </div>
+        <input type="range" min={0.15} max={0.85} step={0.05} value={effectiveLandRatio}
           onChange={(e) => set({ land_ratio: Number(e.target.value) })} />
       </label>
 
