@@ -98,3 +98,12 @@ def test_custom_heightmap_input():
     hm = np.linspace(0.4, 0.6, 257 * 257, dtype=np.float32).reshape(257, 257)
     res = generate(Recipe(seed=1, size=1000, heightmap=hm))
     assert res.height01.shape == (513, 513)
+
+
+def test_extreme_land_ratio_does_not_crash():
+    """land_ratio x theme.land_ratio_scale can exceed 1.0 - must clamp, not raise."""
+    from rustworld.generation import Recipe, generate
+    res = generate(Recipe(seed=912156065, size=1000, theme="classic",
+                          land_ratio=0.9, mountain_scale=2.0,
+                          monuments=False, roads=False))
+    assert res.stats["land_percent"] > 50.0

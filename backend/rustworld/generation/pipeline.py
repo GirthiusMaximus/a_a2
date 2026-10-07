@@ -114,7 +114,13 @@ def slope_deg(height01: np.ndarray, size: int) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 def _fit_land_ratio(height01: np.ndarray, target: float) -> np.ndarray:
-    """Shift heights so `target` fraction of the map sits above sea level."""
+    """Shift heights so `target` fraction of the map sits above sea level.
+
+    `target` arrives pre-multiplied by the theme's ``land_ratio_scale``, so a
+    high slider value on a land-heavy theme (0.9 x 1.45) can overshoot 1.0.
+    Clamp instead of letting np.quantile raise.
+    """
+    target = float(np.clip(target, 0.0, 0.99))
     if target <= 0.01:
         return height01
     q = np.quantile(height01, 1.0 - target)
