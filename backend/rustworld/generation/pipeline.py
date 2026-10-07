@@ -263,9 +263,16 @@ def _splat_weights(
         forest *= 0.0
         if not theme.snow:
             snow *= 0.0
-        rock = np.maximum(rock, 0.35)
-        dirt = np.maximum(dirt, 0.45)
-        gravel = np.maximum(gravel, 0.25)
+        if theme.palette == "grey":      # lunar regolith
+            rock = np.maximum(rock, 0.55)
+            gravel = np.maximum(gravel, 0.3)
+            stones = np.maximum(stones, 0.18)
+            dirt *= 0.05
+            sand *= 0.1
+        else:                            # red/tan (mars)
+            dirt = np.maximum(dirt, 0.55)
+            rock = np.maximum(rock, 0.28)
+            gravel = np.maximum(gravel, 0.15)
 
     splat[Splat.SAND] = sand
     splat[Splat.ROCK] = rock * (1 - sand)
@@ -411,7 +418,8 @@ def generate(recipe: Recipe, progress: ProgressFn = _noop_progress) -> Generatio
         height01 = resample(recipe.heightmap, h_res)
     else:
         height01 = theme.build_height(h_res, recipe)
-        height01 = _fit_land_ratio(height01, recipe.land_ratio * theme.land_ratio_scale)
+        if not theme.dry:  # dry themes control their own floor (no crater lakes)
+            height01 = _fit_land_ratio(height01, recipe.land_ratio * theme.land_ratio_scale)
 
     if recipe.erosion and theme.erosion:
         progress(0.25, "Eroding terrain")

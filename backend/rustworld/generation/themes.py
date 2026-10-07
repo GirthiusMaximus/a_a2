@@ -28,6 +28,8 @@ class ThemeSpec:
     rivers: bool = True
     erosion: bool = True
     barren: bool = False          # no grass/forest (moon, mars)
+    dry: bool = False             # clamp interior terrain above sea (no crater lakes)
+    palette: str = "default"      # barren splat palette: "grey" | "red" | "default"
     snow: bool = False            # allow snow even when barren
     rock_slope: float = 38.0      # degrees where rock splat takes over
     snow_height: float = 0.82     # normalized height snowline
@@ -104,12 +106,19 @@ def _craters(res: int, recipe: "Recipe", count: int, max_r: float) -> np.ndarray
     return out
 
 
+def _dry_floor(h: np.ndarray, island: np.ndarray) -> np.ndarray:
+    """Flatten crater floors at a dry level just above the sea, inland only."""
+    floor = SEA_LEVEL + 0.004
+    inland = island > 0.30
+    return np.where(inland, np.maximum(h, floor), h)
+
+
 def moon(res: int, recipe: "Recipe") -> np.ndarray:
     rolling = noise.fbm(res, recipe.seed, octaves=5, scale=3.2) * 0.5
     craters = _craters(res, recipe, count=46, max_r=0.075)
     island = noise.radial_falloff(res, power=2.2, radius=1.12)
-    h = SEA_LEVEL + 0.012 + (rolling * 0.6 + craters) * _amp(recipe) * island + island * 0.02
-    return np.clip(h, 0.0, 1.0)
+    h = SEA_LEVEL - 0.02 + (rolling * 0.6 + craters) * _amp(recipe) * island + island * 0.045
+    return np.clip(_dry_floor(h, island), 0.0, 1.0)
 
 
 def mars(res: int, recipe: "Recipe") -> np.ndarray:
@@ -117,8 +126,8 @@ def mars(res: int, recipe: "Recipe") -> np.ndarray:
     craters = _craters(res, recipe, count=22, max_r=0.06)
     ridges = noise.ridged(res, recipe.seed + 3, octaves=5, scale=2.4) * 0.5
     island = noise.radial_falloff(res, power=2.3, radius=1.1)
-    h = SEA_LEVEL + 0.01 + (dunes + craters + ridges - 0.2) * _amp(recipe) * island + island * 0.018
-    return np.clip(h, 0.0, 1.0)
+    h = SEA_LEVEL - 0.02 + (dunes + craters + ridges - 0.2) * _amp(recipe) * island + island * 0.042
+    return np.clip(_dry_floor(h, island), 0.0, 1.0)
 
 
 def naval(res: int, recipe: "Recipe") -> np.ndarray:
@@ -174,15 +183,15 @@ THEMES: dict[str, ThemeSpec] = {
             key="moon", label="Moon",
             description="Grey cratered regolith. No vegetation, no open water — airlock optional.",
             build_height=moon, fixed_biome=int(Biome.TUNDRA), jungle=False, swamps=False,
-            rivers=False, barren=True, erosion=False, beach_scale=0.3, shelf=0.0,
-            land_ratio_scale=1.4,
+            rivers=False, barren=True, dry=True, palette="grey", erosion=False,
+            beach_scale=0.3, shelf=0.0, land_ratio_scale=1.4,
         ),
         ThemeSpec(
             key="mars", label="Mars",
             description="Rust-red dunes, impact craters and dry ridgelines.",
             build_height=mars, fixed_biome=int(Biome.ARID), jungle=False, swamps=False,
-            rivers=False, barren=True, erosion=True, beach_scale=0.3, shelf=0.0,
-            land_ratio_scale=1.35,
+            rivers=False, barren=True, dry=True, palette="red", erosion=True,
+            beach_scale=0.3, shelf=0.0, land_ratio_scale=1.35,
         ),
         ThemeSpec(
             key="flatlands", label="Flatlands",
