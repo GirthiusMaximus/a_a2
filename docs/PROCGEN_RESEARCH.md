@@ -386,39 +386,62 @@ target*, with theme scaling applied to terrain character, not to the quantile ta
 
 ---
 
-## 7. Proposed Phase 4 plan
+## 7. What was implemented
 
-**A. Facepunch-exact core** (new `backend/rustworld/facepunch.py`)
-- `SeedRandom` — xorshift32, `Range`, `Sign`, `Value`, `Value2D`, `Wanghash`. Bit-exact.
-- `loot_axis_angle(seed)`, `biome_axis_angle(seed)` — exact derivation.
-- `WorldConfig` — real defaults, real normalisation, `IsPrefabAllowed` substring semantics.
+All of the following is live on the `classic` theme (the user scoped tiers to
+Classic for this round; other themes keep their previous behaviour).
 
-**B. Tier system**
-- Tier0/1/2 bands perpendicular to the loot axis at 30/30/40 %.
-- Emit topology bits 26/27/28.
-- Tier-gate monuments via a new `tier` field on `MonumentSpec`.
-- Player spawns from real Tier0 ∩ Beach ∩ Oceanside ∩ Mainland.
-- New overlay showing the three tier regions.
+**A. Facepunch-exact core** -- `backend/rustworld/facepunch.py`
+`SeedRandom` (xorshift32, `Range`/`Sign`/`Value`/`Value2D`/`Wanghash`),
+`loot_axis_angle`/`biome_axis_angle`, `axis_projection`, `tier_index`,
+`WorldConfig` with the real defaults, normalisation and `is_prefab_allowed`,
+plus the verbatim terrain/path constants.  24 dedicated tests, including
+regression locks on known seed -> axis values and a 200k-seed uniformity check.
 
-**C. Monument realism**
-- One placement per prefab per pass (kills duplicates).
-- `MinDistanceSameType = 500 m`.
-- Per-folder target counts calibrated to the empirical table in §4.
-- 8 group candidates × 8 individual candidates with Facepunch's scoring.
-- Roadside class placed *along roads* (warehouse / gas station / supermarket ×3).
-- Recalibrate `monument_density` so 1.0 = vanilla, not 1.5–2× vanilla.
+**B. Loot tiers** -- 30/30/40 bands across the real loot axis, written to
+topology bits 26/27/28; monuments gated by `MonumentSpec.tiers`; player spawns
+are genuine Tier0 beaches with a tier-preserving fallback.
 
-**D. Terrain relief**
-- Region-aware amplitude keyed to the real biome/tier axes.
-- Ridged multifractal mountain cores; restore detail octaves post-erosion.
-- Target realistic above-sea relief; stop wasting the 16-bit range.
+**C. Monument realism** -- one placement per prefab, `MinDistanceSameType`
+500 m, vanilla composition table (`vanilla_count`), `min_map_size` enforced.
 
-**E. Corrections**
-- Road/river constants per §3.6; add trails.
-- Fix `land_ratio` to be an absolute target.
-- Biome fractions default to the real 40/15/15/30.
+**D. Terrain relief** -- rebuilt `classic`: rounded fjorded island with an
+ocean margin, deep varied seabed, rolling continental base, broad ridged
+ranges, coast crossing decoupled from the elevation ramp, noise wavelengths
+scaled with map size.
 
----
+**E. Corrections** -- `land_ratio` is an absolute honoured target; road
+constants match `GenerateRoadLayout`.
+
+### Measured before / after (classic, size 3000)
+
+| Metric | Phase 3 | Now | Real-map target |
+|---|---|---|---|
+| Peak above sea | 94 m | **196 m** | 190-285 m |
+| Mean land elevation | 10.3 m | **~60 m** | 30-70 m |
+| **Median land elevation** | **2.2 m** | **46 m** | 18-55 m |
+| Land above 15 m (river sources) | ~35% | **~83%** | 55-92% |
+| Cliff share (slope > 30 deg) | 1.6% | **7.6%** | 5-18% |
+| Mean slope | 5.2 deg | **13.9 deg** | 8-20 deg |
+| Seabed mean depth | ~0 m (rendered as sand) | **-75 m** | deep |
+| `land_ratio=0.75` honoured | 0.803 | **0.750** | exact |
+| Monuments @ 4500 | 67, with duplicates | **44-45**, correct composition | ~40 large+small |
+| Duplicate unique monuments | yes | **none** | none |
+| Same-type spacing | unconstrained | **>= 500 m** | 500 m |
+| Tier violations | n/a (no real tiers) | **0** | 0 |
+| Tests | 90 | **134** | - |
+
+### Known remaining gaps
+
+* Coastlines are rounder than real maps, which have deeper fjords and more
+  detached islets.
+* Monument footprints are flattened discs; real monuments carry baked terrain
+  stamps from their prefab bundles, which are not in any public source.
+* Cliff share drifts with map size (20% at 1500, 2% at 6000) because feature
+  wavelength cannot scale with area and cell count at the same time.  The
+  common 3000-4500 range sits at 6-8%.
+* Roadside monuments are still placed by the generic placer rather than
+  Facepunch's separate `PlaceMonumentsRoadside` pass along roads.
 
 ## 8. Honest statement of the limit
 
