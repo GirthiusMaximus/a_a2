@@ -146,8 +146,15 @@ def build_world(
     biome: np.ndarray,      # (4 or 5, res, res) float weights
     topology: np.ndarray,   # (res, res) int32 bitmask
     alpha: np.ndarray | None = None,  # (res, res) bool, default all visible
+    prefabs: list | None = None,      # worldfile.PrefabData (monuments)
+    paths: list | None = None,        # worldfile.PathData (roads/rivers)
 ) -> WorldData:
-    world = WorldData(size=int(size), maps=[], prefabs=[], paths=[])
+    world = WorldData(
+        size=int(size),
+        maps=[],
+        prefabs=list(prefabs or []),
+        paths=list(paths or []),
+    )
     height_blob = pack_heights(height01)
     world.set_map("terrain", height_blob)
     world.set_map("height", height_blob)

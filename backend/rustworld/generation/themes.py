@@ -44,6 +44,8 @@ class ThemeSpec:
     shelf: float = 0.85           # strength of shoreline flattening
     land_ratio_scale: float = 1.0
     biome_rotation: float = 0.0   # max radians of seed-random biome-axis tilt
+    monuments: bool = True        # theme supports monument placement
+    roads: bool = True            # theme supports a road network
 
 
 def _amp(recipe: "Recipe") -> float:
@@ -372,7 +374,7 @@ THEMES: dict[str, ThemeSpec] = {
             key="naval", label="Naval",
             description="Mostly ocean scattered with small round islets and submerged shoals; maximum water combat.",
             build_height=naval, rivers=False, swamps=False, dry=True,
-            biome_rotation=0.6,
+            biome_rotation=0.6, roads=False,
         ),
         ThemeSpec(
             key="canyonlands", label="Canyonlands",
@@ -386,6 +388,7 @@ THEMES: dict[str, ThemeSpec] = {
             description="Grey cratered regolith: power-law craters with central peaks, smooth maria plains. No vegetation, no open water.",
             build_height=moon, fixed_biome=int(Biome.TUNDRA), jungle=False, swamps=False,
             rivers=False, barren=True, dry=True, palette="grey", erosion=False,
+            monuments=False, roads=False,
             beach_scale=0.3, shelf=0.0, land_ratio_scale=1.4,
         ),
         ThemeSpec(
@@ -393,6 +396,7 @@ THEMES: dict[str, ThemeSpec] = {
             description="Rust-red plains split by a colossal terraced rift canyon, with dune ripples and impact craters.",
             build_height=mars, fixed_biome=int(Biome.ARID), jungle=False, swamps=False,
             rivers=False, barren=True, dry=True, palette="red", erosion=True,
+            monuments=False, roads=False,
             beach_scale=0.3, shelf=0.0, land_ratio_scale=1.35,
         ),
         ThemeSpec(
@@ -405,7 +409,7 @@ THEMES: dict[str, ThemeSpec] = {
             key="floating", label="Floating Islands",
             description="Sheer-walled pillar islands with lush flat tops high above deep water, with sandbar spawn islets scattered between them.",
             build_height=floating, rivers=False, swamps=False, erosion=False,
-            dry=True, shelf=0.0, beach_scale=0.6,
+            dry=True, shelf=0.0, beach_scale=0.6, roads=False,
             biome_edges=(0.45, 0.85, 0.97), biome_rotation=0.6,
         ),
     ]

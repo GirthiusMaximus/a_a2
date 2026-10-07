@@ -21,8 +21,9 @@ ARTIFACT_FILES = [
     "overlay_player_spawns.png",
     "overlay_ore.png",
     "overlay_animals.png",
-    "overlay_roads.png",
+    "overlay_monuments.png",
     "recipe.json",
+    "monuments.json",
 ]
 
 

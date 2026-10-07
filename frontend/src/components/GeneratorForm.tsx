@@ -1,9 +1,10 @@
 import { useRef, useState } from "react";
-import { Recipe, Theme, api } from "../api";
+import { Monument, Recipe, Theme, api } from "../api";
 
 interface Props {
   themes: Theme[];
   biomes: string[];
+  monuments: Monument[];
   recipe: Recipe;
   onChange: (r: Recipe) => void;
   onSubmit: () => void;
@@ -12,7 +13,7 @@ interface Props {
 
 const BLACKLISTABLE_TOPO = ["swamp", "forest", "clutter", "decor", "river", "lake"];
 
-export default function GeneratorForm({ themes, biomes, recipe, onChange, onSubmit, busy }: Props) {
+export default function GeneratorForm({ themes, biomes, monuments, recipe, onChange, onSubmit, busy }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploadInfo, setUploadInfo] = useState<string>("");
 
@@ -136,6 +137,74 @@ export default function GeneratorForm({ themes, biomes, recipe, onChange, onSubm
           ))}
         </div>
       </label>
+
+
+      <label className="field">
+        <div className="lab">
+          <b>Monuments &amp; roads</b>
+          {!theme?.supports_monuments && <span>not available for this theme</span>}
+        </div>
+        <div className="row" style={{ marginTop: 2 }}>
+          <label className="field" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <input type="checkbox" checked={recipe.monuments}
+              disabled={!theme?.supports_monuments}
+              onChange={(e) => set({ monuments: e.target.checked })} />
+            <span style={{ fontSize: 12.5 }}>Place monuments</span>
+          </label>
+          <label className="field" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <input type="checkbox" checked={recipe.roads}
+              disabled={!theme?.supports_roads}
+              onChange={(e) => set({ roads: e.target.checked })} />
+            <span style={{ fontSize: 12.5 }}>Build roads</span>
+          </label>
+        </div>
+        <div className="row">
+          <label className="field">
+            <div className="lab"><b>Density</b><span>×{recipe.monument_density.toFixed(1)}</span></div>
+            <input type="range" min={0} max={3} step={0.25} value={recipe.monument_density}
+              disabled={!recipe.monuments || !theme?.supports_monuments}
+              onChange={(e) => set({ monument_density: Number(e.target.value) })} />
+          </label>
+          <label className="field" style={{ display: "flex", alignItems: "end", gap: 6 }}>
+            <input type="checkbox" checked={recipe.ring_road}
+              disabled={!recipe.roads || !theme?.supports_roads}
+              onChange={(e) => set({ ring_road: e.target.checked })} />
+            <span style={{ fontSize: 12.5 }}>Ring road</span>
+          </label>
+        </div>
+      </label>
+
+      {recipe.monuments && theme?.supports_monuments && monuments.length > 0 && (
+        <label className="field">
+          <div className="lab">
+            <b>Monument selection</b>
+            <span>{recipe.monument_blacklist.length > 0
+              ? `${recipe.monument_blacklist.length} excluded`
+              : "defaults"}</span>
+          </div>
+          <div className="chips scroll">
+            {monuments
+              .filter((m) => recipe.monument_whitelist === null ? m.default_on : true)
+              .map((m) => {
+                const off = recipe.monument_blacklist.includes(m.key);
+                const tooBig = m.min_map_size > recipe.size;
+                return (
+                  <span key={m.key}
+                    title={`${m.prefab}\nid ${m.prefab_id} · r${m.radius}m${tooBig ? " · needs a bigger map" : ""}`}
+                    className={`chip ${off || tooBig ? "" : "on"}`}
+                    style={tooBig ? { opacity: 0.4 } : {}}
+                    onClick={() => set({ monument_blacklist: toggle(recipe.monument_blacklist, m.key) })}>
+                    {m.name}
+                  </span>
+                );
+              })}
+          </div>
+          <div className="hint">
+            Click to exclude. Greyed-out monuments need a larger map. Repeatable
+            monuments (quarries, gas stations, wells) scale with density.
+          </div>
+        </label>
+      )}
 
       <label className="field">
         <div className="lab">

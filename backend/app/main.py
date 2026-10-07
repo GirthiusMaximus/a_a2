@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from rustworld.generation.themes import THEMES
+from rustworld.monuments import MONUMENTS
 from rustworld.layers import Biome, Topology
 
 from . import queue, store
@@ -40,8 +41,22 @@ def health() -> dict:
 def themes() -> list[dict]:
     return [
         {"key": t.key, "label": t.label, "description": t.description,
-         "supports_rivers": t.rivers, "barren": t.barren}
+         "supports_rivers": t.rivers, "barren": t.barren,
+         "supports_monuments": t.monuments, "supports_roads": t.roads}
         for t in THEMES.values()
+    ]
+
+
+@app.get("/api/monuments")
+def monuments() -> list[dict]:
+    """Monument catalogue: what can be placed, and what is on by default."""
+    return [
+        {"key": m.key, "name": m.name, "category": m.category,
+         "radius": m.radius, "placement": m.placement,
+         "biomes": list(m.biomes), "min_map_size": m.min_map_size,
+         "max_count": m.max_count, "default_on": m.default_on,
+         "prefab": m.path, "prefab_id": m.id, "tags": list(m.tags)}
+        for m in sorted(MONUMENTS.values(), key=lambda s: (-s.radius, s.key))
     ]
 
 

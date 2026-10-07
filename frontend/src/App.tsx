@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Job, Preset, Recipe, Theme, api, defaultRecipe } from "./api";
+import { Job, Monument, Preset, Recipe, Theme, api, defaultRecipe } from "./api";
 import GeneratorForm from "./components/GeneratorForm";
 import MapViewer from "./components/MapViewer";
 
 export default function App() {
   const [themes, setThemes] = useState<Theme[]>([]);
   const [biomes, setBiomes] = useState<string[]>([]);
+  const [monuments, setMonuments] = useState<Monument[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [recipe, setRecipe] = useState<Recipe>(defaultRecipe());
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -16,6 +17,7 @@ export default function App() {
   useEffect(() => {
     api.themes().then(setThemes).catch((e) => setError(String(e)));
     api.options().then((o) => setBiomes(o.biomes)).catch(() => {});
+    api.monuments().then(setMonuments).catch(() => {});
     api.presets().then(setPresets).catch(() => {});
   }, []);
 
@@ -77,7 +79,7 @@ export default function App() {
       <div className="layout">
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <GeneratorForm
-            themes={themes} biomes={biomes} recipe={recipe}
+            themes={themes} biomes={biomes} monuments={monuments} recipe={recipe}
             onChange={setRecipe} onSubmit={() => submit()} busy={busy}
           />
           <div className="panel">

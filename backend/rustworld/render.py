@@ -9,7 +9,7 @@ from __future__ import annotations
 import io
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from .layers import SEA_LEVEL, TERRAIN_HEIGHT, Biome, Splat, Topology
 
@@ -194,3 +194,43 @@ def png_bytes(img: Image.Image) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# monument / road overlays
+# ---------------------------------------------------------------------------
+
+def render_monument_overlay(
+    size: int,
+    monuments: list[dict],
+    roads: list[dict] | None = None,
+    image_res: int = 1024,
+    road_rgba: tuple[int, int, int, int] = (250, 215, 120, 220),
+    monument_rgba: tuple[int, int, int, int] = (255, 90, 90, 200),
+) -> Image.Image:
+    """Transparent overlay marking monument footprints and the road network.
+
+    World space (-size/2 .. +size/2) maps to pixels with +Z up, matching the
+    other renderers (arrays are flipped on export).
+    """
+    img = Image.new("RGBA", (image_res, image_res), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    scale = image_res / float(size)
+
+    def to_px(x_m: float, z_m: float) -> tuple[float, float]:
+        return ((x_m + size / 2.0) * scale, image_res - (z_m + size / 2.0) * scale)
+
+    for road in roads or []:
+        pts = [to_px(x, z) for x, z in road.get("points", [])]
+        if len(pts) < 2:
+            continue
+        w = max(road.get("width", 10.0) * scale, 1.0)
+        draw.line(pts, fill=road_rgba, width=int(round(w)), joint="curve")
+
+    for m in monuments:
+        cx, cy = to_px(m["x"], m["z"])
+        r = max(m["radius"] * scale, 3.0)
+        draw.ellipse([cx - r, cy - r, cx + r, cy + r],
+                     outline=monument_rgba, width=max(int(r * 0.12), 2))
+        draw.ellipse([cx - 2, cy - 2, cx + 2, cy + 2], fill=monument_rgba)
+    return img

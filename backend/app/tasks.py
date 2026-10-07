@@ -18,6 +18,7 @@ from rustworld.render import (
     render_biome_image,
     render_map_image,
     render_mask_overlay,
+    render_monument_overlay,
 )
 
 from . import store
@@ -62,6 +63,12 @@ def run_generation(job_id: str) -> None:
             topology_blacklist=recipe_dict.get("topology_blacklist", []),
             water_level_offset=recipe_dict.get("water_level_offset", 0.0),
             heightmap=heightmap,
+            monuments=recipe_dict.get("monuments", True),
+            monument_density=recipe_dict.get("monument_density", 1.0),
+            monument_whitelist=recipe_dict.get("monument_whitelist"),
+            monument_blacklist=recipe_dict.get("monument_blacklist", []),
+            roads=recipe_dict.get("roads", True),
+            ring_road=recipe_dict.get("ring_road", True),
         )
 
         last_write = [0.0]
@@ -78,6 +85,7 @@ def run_generation(job_id: str) -> None:
         world = build_world(
             result.size, result.height01, result.water01,
             result.splat, result.biome, result.topology,
+            prefabs=result.prefabs, paths=result.paths,
         )
         (d / "map.map").write_bytes(save_map_bytes(world))
 
@@ -99,6 +107,12 @@ def run_generation(job_id: str) -> None:
             d / "overlay_ore.png")
         render_mask_overlay(animal_spawn_mask(result.topology), (235, 80, 60, 110)).save(
             d / "overlay_animals.png")
+        render_monument_overlay(
+            result.size, result.monuments, result.roads,
+            image_res=int(np.clip(result.size // 2, 512, 1600)),
+        ).save(d / "overlay_monuments.png")
+        (d / "monuments.json").write_text(json.dumps(
+            {"monuments": result.monuments, "roads": result.roads}, indent=1))
 
         store.write_status(job_id, progress=0.96, message="Exporting heightmaps")
         (d / "heightmap16.png").write_bytes(export_png16(result.height01))

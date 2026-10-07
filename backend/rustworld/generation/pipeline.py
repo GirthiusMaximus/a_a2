@@ -21,7 +21,12 @@ from ..layers import (
     heightmap_resolution,
     splatmap_resolution,
 )
+from ..monuments import MONUMENTS
+from ..prefabs import MONUMENT_CATEGORY
+from ..worldfile import PrefabData, VectorData
 from . import noise
+from .placement import paint_monuments, place_monuments, stamp_monuments
+from .roads import build_roads, carve_roads, paint_roads, to_path_data
 from .themes import THEMES, ThemeSpec
 
 SEA_M = SEA_LEVEL * TERRAIN_HEIGHT  # 500m
@@ -41,6 +46,12 @@ class Recipe:
     topology_blacklist: list[str] = field(default_factory=list)  # e.g. ["swamp"]
     water_level_offset: float = 0.0   # meters, raises/lowers the sea
     heightmap: np.ndarray | None = None  # optional user-uploaded base heightmap
+    monuments: bool = True            # place monument prefabs
+    monument_density: float = 1.0     # multiplier on repeatable monument counts
+    monument_whitelist: list[str] | None = None  # None = catalogue default set
+    monument_blacklist: list[str] = field(default_factory=list)
+    roads: bool = True                # build the road network
+    ring_road: bool = True            # include the vanilla-style ring road
 
     def rng(self, salt: int = 0) -> np.random.Generator:
         return np.random.default_rng((self.seed + salt * 7919) & 0xFFFFFFFF)
@@ -55,6 +66,10 @@ class GenerationResult:
     biome: np.ndarray
     topology: np.ndarray
     stats: dict
+    prefabs: list = field(default_factory=list)   # worldfile.PrefabData
+    paths: list = field(default_factory=list)     # worldfile.PathData
+    monuments: list = field(default_factory=list) # plain dicts for the UI
+    roads: list = field(default_factory=list)     # polylines for the UI
 
 
 ProgressFn = Callable[[float, str], None]
@@ -453,6 +468,33 @@ def generate(recipe: Recipe, progress: ProgressFn = _noop_progress) -> Generatio
 
     height01 = np.clip(height01, 0.0, 1.0).astype(np.float32)
 
+    # --- monuments + roads (world space, before the layers are painted) ---
+    placements: list = []
+    network = None
+    road_profiles: list = []
+    if recipe.monuments and theme.monuments:
+        progress(0.40, "Siting monuments")
+        work = min(256, h_res)
+        from ..heightmap_io import resample as _resample_grid
+        biome_coarse = _biome_weights(work, _resample_grid(height01, work), recipe, theme)
+        allowed = recipe.monument_whitelist
+        if allowed is None:
+            allowed = [m.key for m in MONUMENTS.values() if m.default_on]
+        allowed = [k for k in allowed if k not in set(recipe.monument_blacklist)]
+        placements = place_monuments(
+            height01, water01, size, recipe.seed, sea, biome_coarse,
+            enabled=allowed, density=recipe.monument_density, work_res=work,
+        )
+        height01 = stamp_monuments(height01, placements, size, sea)
+
+    if recipe.roads and theme.roads:
+        progress(0.45, "Laying roads")
+        network = build_roads(
+            height01, water01, size, sea, placements,
+            seed=recipe.seed, ring=recipe.ring_road,
+        )
+        height01, road_profiles = carve_roads(height01, network, size, sea)
+
     # --- layer-space (splat res) -----------------------------------------
     progress(0.5, "Painting biomes")
     from ..heightmap_io import resample
@@ -475,6 +517,12 @@ def generate(recipe: Recipe, progress: ProgressFn = _noop_progress) -> Generatio
     progress(0.78, "Marking topology")
     topology = _topology(s_res, h_layer, w_layer, splat, biome, recipe, theme, forest_mask, river_mask)
 
+    # monument + road paint goes on last so it overrides the natural layers
+    if network is not None:
+        paint_roads(splat, topology, network, size)
+    if placements:
+        paint_monuments(splat, topology, placements, size)
+
     progress(0.9, "Validating")
     spawn = (topology & (Topology.TIER0 | Topology.BEACH | Topology.OCEANSIDE | Topology.MAINLAND))
     spawn_ok = (spawn == int(Topology.TIER0 | Topology.BEACH | Topology.OCEANSIDE | Topology.MAINLAND))
@@ -496,6 +544,29 @@ def generate(recipe: Recipe, progress: ProgressFn = _noop_progress) -> Generatio
         "max_height_m": round(float(height01.max()) * TERRAIN_HEIGHT - SEA_M, 1),
         "ocean_depth_m": round(SEA_M - float(height01.min()) * TERRAIN_HEIGHT, 1),
     }
+
+    # --- prefabs + paths --------------------------------------------------
+    prefabs = [
+        PrefabData(
+            category=MONUMENT_CATEGORY,
+            id=p.spec.id,
+            position=VectorData(p.x_m, p.y_m, p.z_m),
+            rotation=VectorData(0.0, p.yaw, 0.0),
+            scale=VectorData(1.0, 1.0, 1.0),
+        )
+        for p in placements
+    ]
+    paths = to_path_data(network, road_profiles) if network is not None else []
+    road_lines = [
+        {"kind": r.kind, "width": r.width, "loop": r.loop,
+         "points": [[round(x, 1), round(z, 1)] for x, z in r.points]}
+        for r in (network.roads if network is not None else [])
+    ]
+    stats["monument_count"] = len(placements)
+    stats["monuments"] = sorted({p.spec.name for p in placements})
+    stats["road_count"] = len(road_lines)
+    stats["road_length_km"] = round(network.total_length_m / 1000.0, 2) if network else 0.0
+
     progress(1.0, "Done")
     return GenerationResult(
         size=size,
@@ -505,4 +576,8 @@ def generate(recipe: Recipe, progress: ProgressFn = _noop_progress) -> Generatio
         biome=biome,
         topology=topology,
         stats=stats,
+        prefabs=prefabs,
+        paths=paths,
+        monuments=[p.as_dict() for p in placements],
+        roads=road_lines,
     )

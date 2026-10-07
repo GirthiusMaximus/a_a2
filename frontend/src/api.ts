@@ -12,6 +12,12 @@ export interface Recipe {
   topology_blacklist: string[];
   water_level_offset: number;
   upload_id: string | null;
+  monuments: boolean;
+  monument_density: number;
+  monument_whitelist: string[] | null;
+  monument_blacklist: string[];
+  roads: boolean;
+  ring_road: boolean;
 }
 
 export interface Theme {
@@ -20,6 +26,36 @@ export interface Theme {
   description: string;
   supports_rivers: boolean;
   barren: boolean;
+  supports_monuments: boolean;
+  supports_roads: boolean;
+}
+
+export interface Monument {
+  key: string;
+  name: string;
+  category: string;
+  radius: number;
+  placement: string;
+  biomes: string[];
+  min_map_size: number;
+  max_count: number;
+  default_on: boolean;
+  prefab: string;
+  prefab_id: number;
+  tags: string[];
+}
+
+export interface PlacedMonument {
+  key: string;
+  name: string;
+  category: string;
+  x: number;
+  z: number;
+  y: number;
+  yaw: number;
+  radius: number;
+  prefab: string;
+  prefab_id: number;
 }
 
 export interface Preset {
@@ -56,6 +92,12 @@ export const defaultRecipe = (): Recipe => ({
   topology_blacklist: [],
   water_level_offset: 0,
   upload_id: null,
+  monuments: true,
+  monument_density: 1.0,
+  monument_whitelist: null,
+  monument_blacklist: [],
+  roads: true,
+  ring_road: true,
 });
 
 async function json<T>(resp: Promise<Response>): Promise<T> {
@@ -67,6 +109,7 @@ async function json<T>(resp: Promise<Response>): Promise<T> {
 export const api = {
   themes: () => json<Theme[]>(fetch("/api/themes")),
   presets: () => json<Preset[]>(fetch("/api/presets")),
+  monuments: () => json<Monument[]>(fetch("/api/monuments")),
   options: () =>
     json<{ biomes: string[]; topologies: string[] }>(fetch("/api/options")),
   jobs: () => json<Job[]>(fetch("/api/jobs")),

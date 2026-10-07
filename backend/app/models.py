@@ -21,6 +21,13 @@ class RecipeModel(BaseModel):
     topology_blacklist: list[str] = Field(default_factory=list)
     water_level_offset: float = Field(0.0, ge=-30.0, le=30.0)
     upload_id: Optional[str] = None  # use an uploaded heightmap as the base
+    # --- monuments & roads (phase 3) ---
+    monuments: bool = True
+    monument_density: float = Field(1.0, ge=0.0, le=3.0)
+    monument_whitelist: Optional[list[str]] = None   # None = catalogue default
+    monument_blacklist: list[str] = Field(default_factory=list)
+    roads: bool = True
+    ring_road: bool = True
 
     def resolved_seed(self) -> int:
         return self.seed if self.seed is not None else random.randint(0, 2147483647)

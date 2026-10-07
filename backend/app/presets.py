@@ -4,9 +4,23 @@ PRESETS = [
     {
         "key": "vanilla_4000",
         "label": "Vanilla-style Island 4000",
-        "description": "A classic procedural-style island: ridged highlands, rivers, full biome spread.",
+        "description": "A classic procedural-style island: ridged highlands, rivers, full biome spread, monuments linked by a ring road.",
         "recipe": {"name": "Vanilla-style Island", "size": 4000, "seed": 90210,
                    "theme": "classic"},
+    },
+    {
+        "key": "terrain_only_3000",
+        "label": "Terrain Only 3000",
+        "description": "Pure landscape with no monuments or roads — a clean base to build on in RustEdit.",
+        "recipe": {"name": "Terrain Only", "size": 3000, "seed": 31337,
+                   "theme": "classic", "monuments": False, "roads": False},
+    },
+    {
+        "key": "monument_rich_4500",
+        "label": "Monument Rich 4500",
+        "description": "A big map running every default monument at double density, with the full road network.",
+        "recipe": {"name": "Monument Rich", "size": 4500, "seed": 1337,
+                   "theme": "classic", "monument_density": 2.0},
     },
     {
         "key": "circular_3000",

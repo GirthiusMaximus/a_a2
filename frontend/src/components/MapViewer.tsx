@@ -11,6 +11,7 @@ const OVERLAYS = [
   { key: "overlay_player_spawns.png", label: "Player spawns", color: "#40dc64" },
   { key: "overlay_ore.png", label: "Ore nodes", color: "#ffaa28" },
   { key: "overlay_animals.png", label: "Animals", color: "#eb503c" },
+  { key: "overlay_monuments.png", label: "Monuments & roads", color: "#ff5a5a" },
 ] as const;
 
 const DOWNLOADS = [
@@ -19,6 +20,7 @@ const DOWNLOADS = [
   { key: "heightmap.raw", label: "Heightmap RAW" },
   { key: "preview.png", label: "Preview PNG" },
   { key: "recipe.json", label: "Recipe JSON" },
+  { key: "monuments.json", label: "Monuments JSON" },
 ] as const;
 
 export default function MapViewer({ job, onDelete }: Props) {
@@ -115,6 +117,12 @@ export default function MapViewer({ job, onDelete }: Props) {
             <div className="stat"><div className="k">Peak height</div><div className="v">{stats.max_height_m}m</div></div>
             <div className="stat"><div className="k">Ocean depth</div><div className="v">{stats.ocean_depth_m}m</div></div>
             <div className="stat"><div className="k">Heightmap</div><div className="v">{stats.heightmap_resolution}px</div></div>
+            {stats.monument_count > 0 && (
+              <div className="stat"><div className="k">Monuments</div><div className="v">{stats.monument_count}</div></div>
+            )}
+            {stats.road_length_km > 0 && (
+              <div className="stat"><div className="k">Roads</div><div className="v">{stats.road_length_km} km</div></div>
+            )}
             {Object.entries(stats.biome_percent ?? {}).map(([k, v]) => (
               (v as number) > 0.5 && (
                 <div className="stat" key={k}>
@@ -123,6 +131,17 @@ export default function MapViewer({ job, onDelete }: Props) {
               )
             ))}
           </div>
+          {Array.isArray(stats.monuments) && stats.monuments.length > 0 && (
+            <div className="monument-list">
+              <div className="k">Monuments placed</div>
+              <div>
+                {(stats.monuments as string[]).map((m) => (
+                  <span className="chip static" key={m}>{m}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="hint">
             Drop the .map into your server's <code>maps/</code> folder (or serve it via
             <code> levelurl</code>), or open it directly in RustEdit. The 16-bit heightmap

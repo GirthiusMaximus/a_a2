@@ -201,3 +201,31 @@ a.dl {
 }
 a.dl:hover { border-color: var(--rust); }
 .hint { color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+
+/* ---- monument selection + placed-monument list (phase 3) ---- */
+.chips.scroll {
+  max-height: 148px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.chip.static {
+  cursor: default;
+  border-color: var(--line);
+  color: var(--muted);
+}
+.monument-list {
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--line);
+}
+.monument-list .k {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.monument-list > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
