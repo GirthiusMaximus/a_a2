@@ -17,7 +17,7 @@ VALID_RESOLUTIONS = (513, 1025, 2049, 4097)
 def export_png16(height01: np.ndarray) -> bytes:
     h = np.clip(height01, 0.0, 1.0)
     data = (h * 65535.0 + 0.5).astype(np.uint16)[::-1]  # north-up
-    img = Image.fromarray(data, mode="I;16")
+    img = Image.fromarray(data)  # uint16 -> 16-bit grayscale PNG
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
