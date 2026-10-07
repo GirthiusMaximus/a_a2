@@ -11,7 +11,7 @@ PRESETS = [
     {
         "key": "circular_3000",
         "label": "Circular Isle 3000",
-        "description": "A clean ring-beached round island with a mountainous core.",
+        "description": "A round island with a highland core, ringed by a shallow reef shelf and sandbars.",
         "recipe": {"name": "Circular Isle", "size": 3000, "seed": 777,
                    "theme": "circular_isle"},
     },
@@ -46,7 +46,7 @@ PRESETS = [
     {
         "key": "mars_3500",
         "label": "Mars 3500",
-        "description": "Rust-red dunes, impact craters, dry ridgelines.",
+        "description": "Rust-red plains split by a colossal terraced rift canyon, with dunes and craters.",
         "recipe": {"name": "Mars", "size": 3500, "seed": 2030,
                    "theme": "mars"},
     },
@@ -56,6 +56,13 @@ PRESETS = [
         "description": "Terraced mesas and deep carved canyons.",
         "recipe": {"name": "Canyonlands", "size": 3500, "seed": 435,
                    "theme": "canyonlands", "mountain_scale": 1.25},
+    },
+    {
+        "key": "floating_3500",
+        "label": "Floating Islands 3500",
+        "description": "Sheer pillar islands with lush tops high over deep water; spawn sandbars between.",
+        "recipe": {"name": "Floating Islands", "size": 3500, "seed": 404,
+                   "theme": "floating"},
     },
     {
         "key": "builder_2000",

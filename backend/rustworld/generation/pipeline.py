@@ -186,8 +186,16 @@ def _biome_weights(res: int, height01: np.ndarray, recipe: Recipe, theme: ThemeS
     if theme.fixed_biome is not None:
         biome[theme.fixed_biome] = 1.0
     else:
-        # latitude: row 0 = south (arid) -> row res-1 = north (arctic), noise-warped
-        lat = np.linspace(0.0, 1.0, res, dtype=np.float32)[:, None] * np.ones((1, res), np.float32)
+        # latitude: south (arid) -> north (arctic), noise-warped; themes may
+        # tilt the axis by a seed-random angle (vanilla's diagonal gradients)
+        if theme.biome_rotation > 0.0:
+            ang = (float(recipe.rng(41).random()) - 0.5) * 2.0 * theme.biome_rotation
+            c = np.linspace(-0.5, 0.5, res, dtype=np.float32)
+            xg, yg = np.meshgrid(c, c)
+            norm = abs(np.cos(ang)) + abs(np.sin(ang))
+            lat = (np.cos(ang) * yg + np.sin(ang) * xg) / norm + 0.5
+        else:
+            lat = np.linspace(0.0, 1.0, res, dtype=np.float32)[:, None] * np.ones((1, res), np.float32)
         lat = lat + 0.16 * noise.fbm(res, recipe.seed + 41, octaves=4, scale=2.5)
         # altitude pushes colder
         alt = np.maximum(height01 - (SEA_LEVEL + 120 / TERRAIN_HEIGHT), 0) * TERRAIN_HEIGHT / 260.0
@@ -246,7 +254,7 @@ def _splat_weights(
     rock = noise.smoothstep(theme.rock_slope - 8, theme.rock_slope + 10, slope)
     rock = np.maximum(rock, noise.smoothstep(0.78, 0.92, height01) * 0.8)
     dirt = noise.smoothstep(theme.rock_slope - 22, theme.rock_slope - 4, slope) * (1 - rock)
-    dirt = np.maximum(dirt, (noise.fbm(res, recipe.seed + 77, octaves=4, scale=5.0) > 0.30) * 0.5)
+    dirt = np.maximum(dirt, (noise.fbm(res, recipe.seed + 77, octaves=4, scale=5.0) > 0.45) * 0.35)
     stones = (noise.fbm(res, recipe.seed + 88, octaves=3, scale=7.0) > 0.42) * rock * 0.8
     gravel = (noise.fbm(res, recipe.seed + 99, octaves=3, scale=6.0) > 0.48) * 0.4
 

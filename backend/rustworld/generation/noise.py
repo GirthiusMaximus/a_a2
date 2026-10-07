@@ -114,6 +114,82 @@ def warped_fbm(res: int, seed: int, octaves: int = 5, scale: float = 3.0,
     return total / norm
 
 
+def fbm_at(x: np.ndarray, y: np.ndarray, seed: int, octaves: int = 5,
+           persistence: float = 0.5, lacunarity: float = 2.0) -> np.ndarray:
+    """fBm sampled on caller-provided coordinate grids (rotated/stretched/warped)."""
+    total = np.zeros(x.shape, dtype=np.float32)
+    amp, freq, norm = 1.0, 1.0, 0.0
+    for i in range(octaves):
+        total += amp * perlin(x * freq + i * 17.17, y * freq - i * 9.3, seed + i * 1013)
+        norm += amp
+        amp *= persistence
+        freq *= lacunarity
+    return total / norm
+
+
+def ridged_at(x: np.ndarray, y: np.ndarray, seed: int, octaves: int = 3,
+              persistence: float = 0.5, lacunarity: float = 2.0) -> np.ndarray:
+    """Ridged multifractal on caller-provided coordinate grids, in [0, 1]."""
+    total = np.zeros(x.shape, dtype=np.float32)
+    amp, freq, norm = 1.0, 1.0, 0.0
+    for i in range(octaves):
+        n = perlin(x * freq + i * 31.7, y * freq + i * 11.1, seed + 7919 + i * 877)
+        total += amp * (1.0 - np.abs(n))
+        norm += amp
+        amp *= persistence
+        freq *= lacunarity
+    return np.clip(total / norm, 0.0, 1.0)
+
+
+def worley(res: int, seed: int, cells: int = 8, jitter: float = 0.9,
+           ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Worley (cellular) noise.
+
+    Returns (f1, f2, value1, value2): distance to the nearest / second-nearest
+    feature point in cell units (1.0 == one cell width), and the per-cell
+    random values in [0, 1) of those two cells. f2 - f1 ~ 0 marks Voronoi
+    cell boundaries.
+    """
+    rng = np.random.default_rng(seed & 0xFFFFFFFF)
+    pad = cells + 2
+    pts_x = rng.random((pad, pad)).astype(np.float32)
+    pts_y = rng.random((pad, pad)).astype(np.float32)
+    vals = rng.random((pad, pad)).astype(np.float32)
+    c = np.linspace(0.0, cells, res, dtype=np.float32)
+    x, y = np.meshgrid(c, c)
+    xi = np.clip(np.floor(x).astype(np.int32), 0, cells - 1)
+    yi = np.clip(np.floor(y).astype(np.int32), 0, cells - 1)
+    best = np.full((res, res), np.inf, dtype=np.float32)
+    second = np.full((res, res), np.inf, dtype=np.float32)
+    best_val = np.zeros((res, res), dtype=np.float32)
+    second_val = np.zeros((res, res), dtype=np.float32)
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            cx = xi + dx + 1
+            cy = yi + dy + 1
+            px = (cx - 1) + 0.5 + (pts_x[cy, cx] - 0.5) * jitter
+            py = (cy - 1) + 0.5 + (pts_y[cy, cx] - 0.5) * jitter
+            d = (x - px) ** 2 + (y - py) ** 2
+            v = vals[cy, cx]
+            closer = d < best
+            closer2 = ~closer & (d < second)
+            second = np.where(closer, best, np.where(closer2, d, second))
+            second_val = np.where(closer, best_val, np.where(closer2, v, second_val))
+            best = np.where(closer, d, best)
+            best_val = np.where(closer, v, best_val)
+    return np.sqrt(best), np.sqrt(second), best_val, second_val
+
+
+def terrace(a: np.ndarray, step: float, sharpness: float = 3.0) -> np.ndarray:
+    """Quantize values into smooth terraced steps of `step`."""
+    t = a / step
+    f = np.floor(t)
+    frac = t - f
+    fs = frac**sharpness
+    s = fs / (fs + (1.0 - frac) ** sharpness + 1e-9)
+    return (f + s) * step
+
+
 def smoothstep(edge0: float, edge1: float, x: np.ndarray) -> np.ndarray:
     t = np.clip((x - edge0) / (edge1 - edge0 + 1e-9), 0.0, 1.0)
     return t * t * (3 - 2 * t)
